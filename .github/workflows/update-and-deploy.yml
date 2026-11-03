@@ -1,27 +1,30 @@
-name: Update data and deploy
+name: Update data
+
+# Rebuilds data/snapshot.json from the INDEC API and commits it to main.
+# Vercel deploys every push to main, so a new commit here publishes the site.
+# The INDEC token only lives in this job (repository secret INDEC_TOKEN);
+# the published site never sees it.
 
 on:
   schedule:
     # INDEC publishes at 16:00 Buenos Aires time (19:00 UTC); refresh after that.
     - cron: '41 20 * * *'
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: update-data
   cancel-in-progress: false
 
 jobs:
-  build:
+  update:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: actions/setup-node@v4
         with:
@@ -34,31 +37,13 @@ jobs:
         run: node scripts/build-data.mjs
 
       - name: Commit refreshed snapshot
-        if: github.event_name != 'push'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/snapshot.json
-          git diff --cached --quiet || git commit -m "Actualizar datos $(date -u +%Y-%m-%d)"
-          git push
-
-      - name: Assemble site
-        run: |
-          mkdir -p _site
-          cp -r index.html assets data _site/
-          touch _site/.nojekyll
-
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          if git diff --cached --quiet; then
+            echo "Sin cambios en los datos."
+          else
+            git commit -m "Actualizar datos $(date -u +%Y-%m-%d)"
+            git push origin HEAD:main
+          fi

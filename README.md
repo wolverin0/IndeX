@@ -57,12 +57,21 @@ python3 -m http.server 8000   # then open http://localhost:8000
 
 ## Deploy
 
-`.github/workflows/update-and-deploy.yml` rebuilds the snapshot every day
-after INDEC's 16:00 (ART) release, commits it, and publishes the site to
-GitHub Pages. To enable it:
+The site is static and is hosted on **Vercel**, linked to this repository:
+every push to `main` publishes it (`vercel.json` keeps the data file uncached).
 
-1. Settings → Pages → Source: **GitHub Actions**.
-2. Optional: Settings → Secrets → Actions → `INDEC_TOKEN`.
+`.github/workflows/update-and-deploy.yml` runs every day after INDEC's 16:00
+(ART) release: it rebuilds `data/snapshot.json` and commits it to `main`, which
+triggers the Vercel deploy. You can also run it by hand from the Actions tab.
+
+Setup:
+
+1. Repository Settings → Secrets and variables → Actions → `INDEC_TOKEN`
+   (the job falls back to datos.gob.ar without it).
+2. Repository Settings → General → Default branch: `main` (scheduled
+   workflows run from the default branch).
+
+The token is never added to Vercel: the site doesn't need it.
 
 ## Design notes
 
