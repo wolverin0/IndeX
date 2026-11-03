@@ -11,6 +11,7 @@ export const addMonths = (s, n) => fromIndex(monthIndex(s) + n);
 /** Period label. style: 'short' (ago 2026), 'long' (agosto de 2026), 'tick' (ago 26). */
 export function periodLabel(date, freq = 'M', style = 'short') {
   const { y, m } = ym(date);
+  if (freq === 'A') return String(y);
   if (freq === 'Q') {
     const q = Math.floor((m - 1) / 3) + 1;
     return style === 'long' ? `${q}.º trimestre de ${y}` : `${q}.º trim. ${y}`;

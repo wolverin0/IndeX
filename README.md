@@ -36,10 +36,16 @@ INDEC_TOKEN=... node scripts/build-data.mjs     # official API first
 INDEC_TOKEN=... node scripts/build-data.mjs --probe   # dump distinct values of every INDEC table
 ```
 
-The INDEC adapter matches rows by text (region, description, indicator type)
-because the API's category labels aren't documented. After adding a token, run
-`--probe` once and check the build log: any series it can't match falls back
-to datos.gob.ar and is listed there.
+The INDEC adapter matches rows by their labels (region, description,
+indicator type). It was checked against the live API in November 2026: all
+series match and agree with the datos.gob.ar copies. If INDEC renames a
+category, that series falls back to datos.gob.ar and the build log lists it;
+`--probe` shows the current labels.
+
+The token is only read by the build (locally or in GitHub Actions). The
+published site never calls the INDEC API and never sees the token: visitors
+download the prebuilt `data/snapshot.json`. Tokens expire (the API issues them
+for about six months), so renew it in your INDEC profile and update the secret.
 
 Requires Node 18+. No dependencies, no build step for the site.
 

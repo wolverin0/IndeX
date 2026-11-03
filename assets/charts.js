@@ -189,7 +189,7 @@ export function lineChart(fig, series, opts = {}) {
       if (!s.data.length) return;
       const pts = s.data.map(([d, v]) => [X(monthIndex(d)), Y(v)]);
       // break the line where a period is missing
-      const step = freq === 'Q' ? 3 : freq === 'S' ? 6 : 1;
+      const step = freq === 'Q' ? 3 : freq === 'S' ? 6 : freq === 'A' ? 12 : 1;
       let dStr = '';
       s.data.forEach(([d], k) => {
         const gap = k === 0 || monthIndex(d) - monthIndex(s.data[k - 1][0]) > step;
@@ -359,7 +359,7 @@ export function rankedBars(fig, rows, opts = {}) {
   // One value far outside the rest (e.g. +400 % on a tiny base) would flatten
   // every other bar: cap the scale and mark that bar as clipped.
   const mags = vals.map(Math.abs).sort((a, b) => b - a);
-  const cap = mags.length > 2 && mags[0] > 3 * mags[1] ? mags[1] * 1.25 : Infinity;
+  const cap = opts.clip !== false && mags.length > 2 && mags[0] > 3 * mags[1] ? mags[1] * 1.25 : Infinity;
   const clampV = (v) => Math.max(-cap, Math.min(cap, v));
   const lo = Math.min(0, ...vals.map(clampV)), hi = Math.max(0, ...vals.map(clampV));
   const span = hi - lo || 1;

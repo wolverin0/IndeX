@@ -22,6 +22,7 @@
   --s5: #e87ba4; --s6: #008300;
   --neg: #e34948;
   --ctx: #b5bfc9;
+  --other: #7b8794;
   /* status text */
   --good: #006300;
   --bad: #b42323;
@@ -45,7 +46,7 @@
     --rule: #233040; --grid: #1c2733; --axis: #3a4856;
     --accent: #79b0f2; --accent-wash: #15273b; --on-accent: #0b1117;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
-    --neg: #e66767; --ctx: #4a5663;
+    --neg: #e66767; --ctx: #4a5663; --other: #5f6b78;
     --good: #2bbf2b; --bad: #f07f7f;
   }
 }
@@ -56,7 +57,7 @@
   --rule: #233040; --grid: #1c2733; --axis: #3a4856;
   --accent: #79b0f2; --accent-wash: #15273b; --on-accent: #0b1117;
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
-  --neg: #e66767; --ctx: #4a5663;
+  --neg: #e66767; --ctx: #4a5663; --other: #5f6b78;
   --good: #2bbf2b; --bad: #f07f7f;
 }
 
@@ -126,7 +127,8 @@ main { padding-block: 24px 56px; outline: none; }
 .segmented button { border: 0; background: none; border-radius: 999px; padding: 5px 12px; cursor: pointer; color: var(--ink-2); font-size: var(--step--1); font-weight: 500; }
 .segmented button:hover { background: var(--panel-2); color: var(--ink); }
 .segmented button.on { background: var(--accent); color: var(--on-accent); }
-.segmented select { border: 0; background: var(--panel-2); border-radius: 999px; padding: 5px 10px; }
+.segmented > .seg-name { display: inline-block; margin: 0; }
+.segmented select { width: auto; border: 0; background: var(--panel-2); border-radius: 999px; padding: 5px 10px; }
 
 /* ---------- hero ---------- */
 .hero {

@@ -276,8 +276,9 @@ function precios() {
   const f4 = figure({ title: `Variación ${mLabel} por región`, subtitle: `Nivel general, ${periodLabel(ref[0], 'M', 'long')}. La línea marca el total del país.`, source: sourceLine('ipc.ng.gba'), table: () => ({ columns: ['Región', `Variación ${mLabel}`], rows: [...regs].sort((a, b) => b.value - a.value).map((r) => [r.label, fmt.pct(r.value)]) }) });
   rankedBars(f4, regs, { format: (x) => fmt.pct(x), reference: { value: ref[1], label: 'Total país' } });
 
-  const wholesale = [{ label: 'Minoristas (IPC)', color: '--s1', data: win('precios', yy) }, { label: 'Mayoristas (IPIM)', color: '--s2', data: win('precios', change(D('ipim'), 12)) }];
-  const f5 = figure({ title: 'Precios mayoristas y minoristas', subtitle: 'Variación interanual. Los mayoristas suelen anticipar lo que llega a las góndolas.', source: sourceLine('ipc.ng.nac', 'ipim'), table: tableFor(wholesale, 'M', fmt.pct) });
+  const wholesale = [{ label: 'Minoristas (IPC)', color: '--s1', data: win('precios', yy) }, { label: 'Mayoristas (IPIM)', color: '--s2', data: win('precios', change(D('ipim'), 12)) }]
+    .concat(has('icc') ? [{ label: 'Construcción (ICC)', color: '--s3', data: win('precios', change(D('icc'), 12)) }] : []);
+  const f5 = figure({ title: has('icc') ? 'Precios mayoristas, minoristas y de la construcción' : 'Precios mayoristas y minoristas', subtitle: `Variación interanual. Los mayoristas suelen anticipar lo que llega a las góndolas.${has('icc') ? ' La construcción se mide en el Gran Buenos Aires.' : ''}`, source: sourceLine('ipc.ng.nac', 'ipim'), table: tableFor(wholesale, 'M', fmt.pct) });
   lineChart(f5, wholesale, { format: (x) => fmt.pct(x), axisFormat: (x) => `${fmt.axis(x)} %` });
 
   return h('div', {},
@@ -441,9 +442,9 @@ function comercio() {
   lineChart(f2, ei, { format: fmt.usdM, axisFormat: fmt.axis });
 
   const sum12 = (k) => rollingSum(D(k), 12).at(-1)?.[1];
-  const ex = [['expo.pp', 'Productos primarios', '--s1'], ['expo.moa', 'Manufacturas agropecuarias', '--s2'], ['expo.moi', 'Manufacturas industriales', '--s3'], ['expo.cye', 'Combustibles y energía', '--s4', true]]
+  const ex = [['expo.pp', 'Productos primarios', '--s1'], ['expo.moa', 'Manufacturas agropecuarias', '--s2'], ['expo.moi', 'Manufacturas industriales', '--s3'], ['expo.cye', 'Combustibles y energía', '--s4', true], ['expo.conf', 'Confidencial', '--other']]
     .map(([k, label, color, darkText]) => ({ label, color, darkText, value: sum12(k) })).filter((p) => p.value > 0);
-  const f3 = figure({ title: 'Qué exporta la Argentina', subtitle: `Últimos 12 meses hasta ${periodLabel(ld)}, por gran rubro`, source: sourceLine('expo.pp', 'expo.moi'), table: () => ({ columns: ['Rubro', 'Millones de US$'], rows: ex.map((p) => [p.label, fmt.usdM(p.value)]) }) });
+  const f3 = figure({ title: 'Qué exporta la Argentina', subtitle: `Últimos 12 meses hasta ${periodLabel(ld)}, por gran rubro.${ex.some((p) => p.label === 'Confidencial') ? ' «Confidencial»: operaciones que el INDEC no detalla por secreto estadístico.' : ''}`, source: sourceLine('expo.pp', 'expo.moi'), table: () => ({ columns: ['Rubro', 'Millones de US$'], rows: ex.map((p) => [p.label, fmt.usdM(p.value)]) }) });
   segmentedBar(f3, ex, { format: fmt.usdM });
   const otros = (sum12('impo.vap') ?? 0) + (sum12('impo.resto') ?? 0);
   const im = [['impo.bi', 'Bienes intermedios', '--s1'], ['impo.bk', 'Bienes de capital', '--s2'], ['impo.pya', 'Piezas y accesorios', '--s3'], ['impo.bc', 'Bienes de consumo', '--s4', true], ['impo.cyl', 'Combustibles', '--s5']]
@@ -456,7 +457,7 @@ function comercio() {
     for (const [flow, title] of [['expo', 'Principales destinos de las exportaciones'], ['impo', 'Principales orígenes de las importaciones']]) {
       const c = SNAP.trade.countries[flow]; if (!c) continue;
       const rows = c.rows.slice(0, 10).map((r) => ({ label: r.name, value: r.value }));
-      const f = figure({ title, subtitle: `Millones de dólares, ${periodLabel(c.from)} a ${periodLabel(c.to)}`, source: 'Fuente: INDEC (API oficial)', table: () => ({ columns: ['País', 'Millones de US$'], rows: rows.map((r) => [r.label, fmt.usdM(r.value)]) }) });
+      const f = figure({ title, subtitle: `Millones de dólares, ${periodLabel(c.from)} a ${periodLabel(c.to)}. No incluye operaciones confidenciales ni sin país asignado.`, source: 'Fuente: INDEC (API oficial)', table: () => ({ columns: ['País', 'Millones de US$'], rows: rows.map((r) => [r.label, fmt.usdM(r.value)]) }) });
       rankedBars(f, rows, { format: fmt.usdM });
       extra.push(f.node);
     }
@@ -494,11 +495,11 @@ function poblacion() {
   const f1 = figure({ title: `Pirámide de población, ${y}`, subtitle: 'Personas por grupo de edad', source: 'Fuente: INDEC, proyecciones con base en el Censo 2022', table: () => ({ columns: ['Edad', 'Varones', 'Mujeres'], rows: P.bands.map((b, i) => [b, fmt.int(pyr.v[i]), fmt.int(pyr.m[i])]).reverse() }) });
   pyramid(f1, P.bands, pyr.v, pyr.m);
   const totals = [{ label: 'Población', color: '--s1', data: years.map((yy) => [`${yy}-07`, P.totals[yy]]) }];
-  const f2 = figure({ title: 'Población total proyectada', subtitle: 'Al 1 de julio de cada año', source: 'Fuente: INDEC, proyecciones con base en el Censo 2022', table: tableFor(totals, 'M', fmt.int) });
-  lineChart(f2, totals, { format: fmt.int, axisFormat: fmt.axis, area: false });
+  const f2 = figure({ title: 'Población total proyectada', subtitle: 'Al 1 de julio de cada año', source: 'Fuente: INDEC, proyecciones con base en el Censo 2022', table: tableFor(totals, 'A', fmt.int) });
+  lineChart(f2, totals, { format: fmt.int, axisFormat: fmt.axis, area: false, freq: 'A' });
   const prov = P.provinces.map((p) => ({ label: p.name, value: p.years[y] ?? 0 }));
   const f3 = figure({ title: `Población por provincia, ${y}`, source: 'Fuente: INDEC, proyecciones con base en el Censo 2022', table: () => ({ columns: ['Jurisdicción', 'Población'], rows: [...prov].sort((a, b) => b.value - a.value).map((r) => [r.label, fmt.int(r.value)]) }), className: 'tall' });
-  rankedBars(f3, prov, { format: fmt.int });
+  rankedBars(f3, prov, { format: fmt.int, clip: false });
   const sel = h('select', { id: 'pop-year', onchange: (e) => { state.popYear = Number(e.target.value); render(); } }, ...years.map((yy) => h('option', { value: yy, selected: yy === y }, String(yy))));
   return h('div', {},
     sectionHead('poblacion', 'Población', 'Proyecciones del Censo 2022: cuántos somos, cómo cambia la edad de la población y cuánta gente vive en cada provincia.', [h('label', { class: 'segmented', for: 'pop-year' }, h('span', { class: 'seg-name', text: 'Año' }), sel)]),

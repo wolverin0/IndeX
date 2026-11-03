@@ -88,23 +88,23 @@ for (const [code, name, re, id] of IPC_DIVISIONS) {
 }
 add('ipim', {
   title: 'Precios mayoristas (IPIM)', short: 'IPIM', unit: 'Índice dic-2015=100', freq: 'M',
-  indec: { endpoint: 'sipm_precios_mayoristas', text: /ipim|internos al por mayor/, desc: /^nivel general/ },
+  indec: { endpoint: 'sipm_precios_mayoristas', text: /\bipim\b/, desc: /^nivel general/ },
   fallback: { id: '448.1_NIVEL_GENERAL_0_0_13_46' },
 });
 add('icc', {
-  title: 'Costo de la construcción (ICC)', short: 'ICC', unit: 'Índice 1993=100', freq: 'M',
+  title: 'Costo de la construcción (ICC)', short: 'ICC', unit: 'Índice ene-2022=100', freq: 'M',
   indec: { endpoint: 'icc_precios_construccion', desc: /^nivel general/ },
 });
 
 // ---- Canastas --------------------------------------------------------------
 add('cba', {
   title: 'Canasta básica alimentaria (CBA) por adulto equivalente', short: 'CBA', unit: 'Pesos', freq: 'M',
-  indec: { endpoint: 'valorizacion_canastas_cba_cbt', text: /alimentaria|\bcba\b/, notText: /variaci/ },
+  indec: { endpoint: 'valorizacion_canastas_cba_cbt', code: /^cba$/, nivel: /adulto/, notText: /variaci/ },
   fallback: { id: '150.1_CSTA_BARIA_0_D_26' },
 });
 add('cbt', {
   title: 'Canasta básica total (CBT) por adulto equivalente', short: 'CBT', unit: 'Pesos', freq: 'M',
-  indec: { endpoint: 'valorizacion_canastas_cba_cbt', text: /canasta basica total|\bcbt\b/, notText: /variaci/ },
+  indec: { endpoint: 'valorizacion_canastas_cba_cbt', code: /^cbt$/, nivel: /adulto/, notText: /variaci/ },
   fallback: { id: '150.1_CSTA_BATAL_0_D_20' },
 });
 for (const [code, label] of [['men1', 'Menores de 1 año'], ['1a3', 'De 1 a 3 años'], ['4a5', 'De 4 a 5 años'], ['6a12', 'De 6 a 12 años']]) {
@@ -171,17 +171,17 @@ for (const [code, name, re, id] of EMAE_SECTORS) {
 }
 add('ipi.original', {
   title: 'IPI manufacturero · serie original', short: 'Original', unit: 'Índice 2004=100', freq: 'M',
-  indec: { endpoint: 'ipi_manufacturero', desc: /^nivel general/, serie: /original/ },
+  indec: { endpoint: 'ipi_manufacturero', desc: /nivel general/, serie: /original/ },
   fallback: { id: '453.1_SERIE_ORIGNAL_0_0_14_46' },
 });
 add('ipi.desest', {
   title: 'IPI manufacturero · desestacionalizada', short: 'Desestacionalizada', unit: 'Índice 2004=100', freq: 'M',
-  indec: { endpoint: 'ipi_manufacturero', desc: /^nivel general/, serie: /desestacionalizad/ },
+  indec: { endpoint: 'ipi_manufacturero', desc: /nivel general/, serie: /desestacionalizad/ },
   fallback: { id: '453.1_SERIE_DESEADA_0_0_24_58' },
 });
 add('ipimin.original', {
   title: 'IPI minero · serie original', short: 'Minería', unit: 'Índice 2016=100', freq: 'M',
-  indec: { endpoint: 'ipi_minero', desc: /^nivel general/, serie: /original/ },
+  indec: { endpoint: 'ipi_minero', desc: /nivel general/, serie: /original/ },
 });
 
 // ---- Comercio exterior -----------------------------------------------------
@@ -194,6 +194,7 @@ const TRADE = [
   ['expo.moa', 'Manufacturas de origen agropecuario', { id: '74.3_IEMOA_0_M_48' }],
   ['expo.moi', 'Manufacturas de origen industrial', { id: '75.3_ITM_0_M_13' }],
   ['expo.cye', 'Combustibles y energía', { plus: ['74.3_IET_0_M_16'], minus: ['74.3_IEPP_0_M_35', '74.3_IEMOA_0_M_48', '75.3_ITM_0_M_13'] }],
+  ['expo.conf', 'Confidencial o sin asignar', undefined],
   ['impo.bk', 'Bienes de capital', { id: '74.3_IIBCA_0_M_32' }],
   ['impo.bi', 'Bienes intermedios', { id: '74.3_IIBI_0_M_36' }],
   ['impo.cyl', 'Combustibles y lubricantes', { plus: ['74.3_IIT_0_M_25'], minus: ['74.3_IBCPP_0_M_32', '74.3_IIBI_0_M_36', '74.3_IIBCO_0_M_32', '74.3_IIVAP_0_M_49', '74.3_IIR_0_M_23'] }],

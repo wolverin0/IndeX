@@ -65,18 +65,47 @@ async function getJSON(url, headers = {}, tries = 4) {
 }
 
 // ---------------------------------------------------------------- INDEC API
+// Columns we need from the big tables (smaller payloads, faster paging).
+const SELECT = {
+  comercio_exterior_exportacion_bienes: 'Anio,Mes,rubro_cod,pais_cod,valor_FOB',
+  comercio_exterior_importacion_bienes: 'Anio,Mes,uso_economico_cod,pais_cod,valor_CIF',
+};
+
+async function indecPage(endpoint, offset, withCount = false) {
+  const q = new URLSearchParams({ order: ORDER[endpoint], limit: '1000', offset: String(offset) });
+  if (SELECT[endpoint]) q.set('select', SELECT[endpoint]);
+  const url = `${INDEC}/${endpoint}?${q}${FILTER[endpoint] ? `&${FILTER[endpoint]}` : ''}`;
+  for (let i = 0; ; i++) {
+    try {
+      const res = await fetch(url, { headers: { Accept: 'application/json', Authorization: `Bearer ${TOKEN}`, ...(withCount ? { Prefer: 'count=exact' } : {}) } });
+      if (res.status === 401 || res.status === 403) throw Object.assign(new Error(`HTTP ${res.status}`), { fatal: true });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const total = Number(res.headers.get('content-range')?.split('/')[1]);
+      return { rows: await res.json(), total };
+    } catch (err) {
+      if (err.fatal || i >= 3) throw err;
+      await sleep(2000 * 2 ** i);
+    }
+  }
+}
+
 const tableCache = new Map();
 async function indecTable(endpoint) {
   if (tableCache.has(endpoint)) return tableCache.get(endpoint);
   const p = (async () => {
-    const rows = [];
-    for (let offset = 0; ; offset += 1000) {
-      const q = new URLSearchParams({ order: ORDER[endpoint], limit: '1000', offset: String(offset) });
-      const extra = FILTER[endpoint] ? `&${FILTER[endpoint]}` : '';
-      const page = await getJSON(`${INDEC}/${endpoint}?${q}${extra}`, { Authorization: `Bearer ${TOKEN}` });
-      rows.push(...page);
-      if (page.length < 1000) break;
-    }
+    const first = await indecPage(endpoint, 0, true);
+    const pages = [first.rows];
+    const offsets = [];
+    for (let o = 1000; o < (first.total || 0); o += 1000) offsets.push(o);
+    let next = 0;
+    const worker = async () => {
+      while (next < offsets.length) {
+        const k = next++;
+        pages[k + 1] = (await indecPage(endpoint, offsets[k])).rows;
+      }
+    };
+    await Promise.all(Array.from({ length: 6 }, worker));
+    const rows = pages.flat();
     log(`  indec ${endpoint}: ${rows.length} filas`);
     return rows;
   })();
@@ -129,12 +158,14 @@ async function indecSeries(def) {
     if (spec.column) {
       // Wide tables (EPH, canasta de crianza): one column per indicator.
       const area = norm(pick(row, 'area_geografica_nom') ?? 'total');
-      if (!/total|31 aglomerados/.test(area)) continue;
+      if (!/t_31|total|31/.test(area)) continue;
       value = pick(row, spec.column);
     } else {
       if (spec.region && !spec.region.test(norm(pick(row, 'region')))) continue;
       if (spec.desc && !spec.desc.test(norm(pick(row, 'descripcion')))) continue;
       if (spec.serie && !spec.serie.test(norm(pick(row, 'serie')))) continue;
+      if (spec.code && !spec.code.test(norm(pick(row, 'codigo')))) continue;
+      if (spec.nivel && !spec.nivel.test(norm(pick(row, 'nivel')))) continue;
       const txt = rowText(row);
       if (spec.text && !spec.text.test(txt)) continue;
       if (spec.notText && spec.notText.test(txt)) continue;
@@ -160,7 +191,7 @@ async function indecTrade() {
   for (const r of nom) (names[norm(r.nombre_columna)] ??= {})[String(r.codigo)] = r.codigo_descripcion;
   const label = (col, code) => names[norm(col)]?.[String(code)] ?? String(code);
 
-  const RUBROS = [['expo.pp', /primarios/], ['expo.moa', /agropecuario/], ['expo.moi', /industrial/], ['expo.cye', /combustible/]];
+  const RUBROS = [['expo.pp', /primarios/], ['expo.moa', /agropecuario/], ['expo.moi', /industrial/], ['expo.cye', /combustible/], ['expo.conf', /confidencial|desconocido|no se puede/]];
   const USOS = [['impo.bk', /^bienes de capital/], ['impo.bi', /intermedios/], ['impo.cyl', /combustibles/], ['impo.pya', /piezas/], ['impo.bc', /consumo/], ['impo.vap', /vehiculos/], ['impo.resto', /resto/]];
 
   const series = {};
@@ -198,7 +229,9 @@ async function indecTrade() {
     for (const [k] of groups) if (byGroup[k].size) series[k] = sorted(byGroup[k]);
     countries[flow] = {
       from, to: last,
+      // "Indeterminado", "Confidencial" and similar codes are not countries.
       rows: [...byCountry].map(([code, v]) => ({ code, name: label('pais_cod', code), value: v }))
+        .filter((r) => !/indeterminad|confidencial|desconocid|no se puede/.test(norm(r.name)))
         .sort((a, b) => b.value - a.value).slice(0, 15),
     };
   }
