@@ -8,7 +8,7 @@ const has = (...keys) => keys.every((k) => D(k).length);
 
 const RANGES = [['1a', 12, '1 año'], ['3a', 36, '3 años'], ['5a', 60, '5 años'], ['10a', 120, '10 años'], ['todo', 0, 'Todo']];
 const state = {
-  range: { precios: '3a', canastas: '3a', trabajo: '10a', pobreza: 'todo', actividad: '5a', comercio: '5a' },
+  range: { salarios: '3a', dolar: '3a', precios: '3a', canastas: '3a', trabajo: '10a', pobreza: 'todo', actividad: '5a', comercio: '5a' },
   measure: 'm',
   popYear: null,
   household: [{ age: 35, sex: 'v' }, { age: 31, sex: 'm' }, { age: 6, sex: 'v' }, { age: 8, sex: 'm' }],
@@ -19,10 +19,30 @@ const months = (section) => RANGES.find((r) => r[0] === state.range[section])[1]
 const win = (section, data) => lastMonths(data, months(section));
 
 // ---------------------------------------------------------------- helpers
+const SOURCE_LABEL = { indec: 'INDEC (API oficial)', 'datos.gob.ar': 'INDEC, vía datos.gob.ar', argentinadatos: 'ArgentinaDatos (cotizaciones de mercado)', bcra: 'Banco Central (BCRA)' };
+const ORIGIN_LABEL = { indec: 'API INDEC', 'datos.gob.ar': 'datos.gob.ar', argentinadatos: 'ArgentinaDatos', bcra: 'BCRA' };
 function sourceLine(...keys) {
-  const srcs = new Set(keys.map((k) => S(k)?.source).filter(Boolean));
-  if (!srcs.size) return 'Fuente: INDEC';
-  return srcs.has('datos.gob.ar') ? 'Fuente: INDEC, vía datos.gob.ar' : 'Fuente: INDEC (API oficial)';
+  const srcs = [...new Set(keys.map((k) => S(k)?.source).filter(Boolean))];
+  if (!srcs.length) return 'Fuente: INDEC';
+  if (srcs.length === 2 && srcs.includes('indec') && srcs.includes('datos.gob.ar')) return 'Fuente: INDEC (API oficial y datos.gob.ar)';
+  return `Fuente: ${srcs.map((x) => SOURCE_LABEL[x] ?? x).join(' y ')}`;
+}
+const fmtDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+/** Series computed from published ones, added to the snapshot at load time. */
+function derive() {
+  const inf = D('eph.informalidad'), emp = D('eph.empleo');
+  if (inf.length && emp.length) {
+    // INDEC publishes informal employment over the total population; divide by
+    // the employment rate to get the share of workers who are informal.
+    SNAP.series['eph.informalidad.share'] = { title: 'Informalidad (% de las personas ocupadas)', short: 'Informalidad', unit: '%', freq: 'Q', source: S('eph.informalidad').source, sourceId: 'derivada: empleo informal / empleo',
+      data: inf.filter(([d]) => at(emp, d)).map(([d, v]) => [d, (v / at(emp, d)) * 100]) };
+  }
+  const o = D('usd.oficial'), b = D('usd.blue');
+  if (o.length && b.length) {
+    SNAP.series['usd.brecha'] = { title: 'Brecha entre el dólar blue y el oficial', short: 'Brecha', unit: '%', freq: 'M', source: S('usd.blue').source, sourceId: 'derivada: blue / oficial − 1',
+      data: b.filter(([d]) => at(o, d)).map(([d, v]) => [d, (v / at(o, d) - 1) * 100]) };
+  }
 }
 const tableFor = (series, freq, format) => () => {
   const dates = [...new Set(series.flatMap((s) => s.data.map((d) => d[0])))].sort().reverse();
@@ -190,6 +210,11 @@ function inicio() {
   tiles.push(tile({ label: 'Inflación interanual', value: fmt.pct(last(yy)[1]), period: periodLabel(last(yy)[0]),
     deltaEl: delta(last(yy)[1] - yy[yy.length - 2][1], fmt.pp(last(yy)[1] - yy[yy.length - 2][1]), 'vs. mes anterior', false),
     spark: lastMonths(yy, 24), href: '#precios' }));
+  if (has('salarios.total')) {
+    const yyW = change(D('salarios.total'), 12); const [wd, wv] = last(yyW); const inf = at(yy, wd);
+    if (inf !== undefined) tiles.push(tile({ label: 'Salarios, interanual', value: fmt.signedPct(wv), period: periodLabel(wd),
+      deltaEl: delta(wv - inf, fmt.pp(wv - inf), 'vs. la inflación', true), spark: lastMonths(yyW, 24), href: '#salarios' }));
+  }
   if (has('cbt')) {
     const cbt = D('cbt'); const lp = cbt.map(([dd, x]) => [dd, x * 3.09]); const ch = last(change(cbt, 1))[1];
     tiles.push(tile({ label: 'Línea de pobreza, hogar tipo', value: fmt.pesosCompact(last(lp)[1]), period: periodLabel(last(lp)[0]), note: 'GBA',
@@ -215,6 +240,11 @@ function inicio() {
     tiles.push(tile({ label: 'Saldo comercial', value: fmt.signedUsdM(bv), period: periodLabel(bd),
       deltaEl: prev !== undefined ? delta(bv - prev, fmt.signedUsdM(bv - prev), 'vs. un año antes', true) : null, spark: lastMonths(bal, 24), href: '#comercio' }));
   }
+  const usdO = SNAP.markets?.['usd.oficial'], usdB = SNAP.markets?.['usd.blue'];
+  if (usdO) {
+    tiles.push(tile({ label: 'Dólar oficial', value: fmt.pesos(usdO.valor), period: fmtDate(usdO.fecha), note: usdB ? `blue ${fmt.pesos(usdB.valor)}` : null,
+      spark: lastMonths(D('usd.oficial'), 24), href: '#dolar' }));
+  }
 
   const divs = divisionRows(1);
   const top = figure({ title: `Qué subió más en ${periodLabel(d, 'M', 'month')}`, subtitle: 'Variación mensual de precios por tipo de gasto, total del país', source: sourceLine('ipc.ng.nac', 'ipc.div.alimentos'), table: () => ({ columns: ['División', 'Variación mensual'], rows: [...divs].sort((a, b) => b.value - a.value).map((r) => [r.label, fmt.pct(r.value)]) }) });
@@ -228,7 +258,7 @@ function inicio() {
         h('p', { class: 'hero-text', text: `Los precios subieron ${fmt.pct(v)} en el mes. En los últimos doce meses acumulan ${fmt.pct(last(yy)[1])} y en lo que va de ${d.slice(0, 4)}, ${fmt.pct(last(acc)[1])}.` }),
         h('a', { class: 'more', href: '#precios', text: 'Ver precios en detalle' })),
       hero.node),
-    h('section', { class: 'tiles', 'aria-label': 'Indicadores principales' }, ...tiles),
+    h('section', { class: `tiles${tiles.length === 8 ? ' four' : ''}`, 'aria-label': 'Indicadores principales' }, ...tiles),
     h('div', { class: 'grid' }, inflationCalculator(), top.node),
     h('div', { class: 'grid' }, householdCalculator()));
 }
@@ -330,7 +360,7 @@ function canastas() {
 }
 
 function trabajo() {
-  const keys = [['eph.desocupacion', 'Desocupación', false], ['eph.actividad', 'Actividad', null], ['eph.empleo', 'Empleo', true], ['eph.subocupacion', 'Subocupación', false], ['eph.informalidad', 'Empleo informal', false]];
+  const keys = [['eph.desocupacion', 'Desocupación', false], ['eph.actividad', 'Actividad', null], ['eph.empleo', 'Empleo', true], ['eph.subocupacion', 'Subocupación', false], ['eph.informalidad.share', 'Informalidad', false]];
   const tiles = keys.filter(([k]) => has(k)).map(([k, label, good]) => {
     const s = D(k); const dd = last(diff(s, 12));
     return tile({ label, value: fmt.pct(last(s)[1]), period: periodLabel(last(s)[0], 'Q'), deltaEl: dd ? delta(dd[1], fmt.pp(dd[1]), 'vs. un año antes', good) : null, spark: lastMonths(s, 40) });
@@ -343,9 +373,9 @@ function trabajo() {
   const f2 = figure({ title: 'Actividad y empleo', subtitle: 'Porcentaje de la población total', source: sourceLine('eph.actividad'), table: tableFor(b, 'Q', fmt.pct) });
   lineChart(f2, b, pct);
   let inf;
-  if (has('eph.informalidad')) {
-    const c = [{ label: 'Empleo informal', color: '--s1', data: win('trabajo', D('eph.informalidad')) }];
-    const f3 = figure({ title: 'Empleo informal', subtitle: 'Porcentaje de las personas ocupadas', source: sourceLine('eph.informalidad'), table: tableFor(c, 'Q', fmt.pct) });
+  if (has('eph.informalidad.share')) {
+    const c = [{ label: 'Informalidad', color: '--s1', data: win('trabajo', D('eph.informalidad.share')) }];
+    const f3 = figure({ title: 'Informalidad laboral', subtitle: 'Porcentaje de las personas que trabajan sin empleo formal (sin registro ni aportes). El INDEC publica esta serie desde fines de 2023.', source: sourceLine('eph.informalidad'), table: tableFor(c, 'Q', fmt.pct) });
     lineChart(f3, c, pct); inf = f3.node;
   } else inf = unavailable('Empleo informal', 'Qué parte de las personas que trabajan lo hace sin aportes ni registro.');
 
@@ -421,7 +451,108 @@ function actividad() {
   return h('div', {},
     sectionHead('actividad', 'Actividad económica', 'Cuánto produce la economía cada mes (EMAE, una aproximación mensual del PBI) y cómo le va a la industria.', [rangeControl('actividad')]),
     tiles,
-    h('div', { class: 'grid' }, f1.node, f2.node, f3.node, f4.node, minero));
+    h('div', { class: 'grid' }, f1.node, f2.node, f3.node, f4.node, minero, isacFigure()));
+}
+
+function isacFigure() {
+  if (!has('isac')) return null;
+  const iy = change(D('isac'), 12);
+  const f = figure({ title: 'Construcción: variación interanual', subtitle: 'Indicador sintético de la actividad de la construcción (ISAC), serie original', source: sourceLine('isac'), table: tableFor([{ label: 'Variación interanual', data: win('actividad', iy) }], 'M', fmt.signedPct) });
+  columnChart(f, win('actividad', iy), { format: fmt.signedPct, axisFormat: (x) => `${fmt.axis(x)} %`, negColor: '--neg', label: 'ISAC' });
+  return f.node;
+}
+
+function salarios() {
+  const head = sectionHead('salarios', 'Salarios', 'Cuánto suben los sueldos según el índice de salarios del INDEC, y si le ganan o no a la inflación.', [rangeControl('salarios')]);
+  if (!has('salarios.total', 'ipc.ng.nac')) return h('div', {}, head, h('div', { class: 'grid' }, unavailable('Salarios', 'Evolución de los sueldos registrados, públicos y no registrados.')));
+  const ipc = D('ipc.ng.nac');
+  const ipcY = change(ipc, 12);
+  const groups = [['salarios.privado', 'Registrados privados', '--s1'], ['salarios.publico', 'Sector público', '--s2'], ['salarios.noregistrado', 'No registrados', '--s3']].filter(([k]) => has(k));
+  const realIndex = (k) => D(k).filter(([d]) => at(ipc, d) !== undefined).map(([d, v]) => [d, v / at(ipc, d)]);
+  const realYoY = (k) => change(realIndex(k), 12);
+
+  const yyW = change(D('salarios.total'), 12);
+  const [wd, wv] = last(yyW);
+  const inf = at(ipcY, wd);
+  const tiles = [tile({ label: 'Salarios, interanual', value: fmt.signedPct(wv), period: periodLabel(wd), note: 'índice total',
+    deltaEl: inf !== undefined ? delta(wv - inf, fmt.pp(wv - inf), `vs. la inflación (${fmt.pct(inf)})`, true) : null, spark: lastMonths(yyW, 24) })];
+  for (const [k, label] of groups) {
+    const y = change(D(k), 12); const r = last(realYoY(k));
+    tiles.push(tile({ label, value: fmt.signedPct(last(y)[1]), period: periodLabel(last(y)[0]), note: 'interanual',
+      deltaEl: r ? delta(r[1], `${fmt.signedPct(r[1])} real`, 'descontada la inflación', true) : null, spark: lastMonths(y, 24) }));
+  }
+
+  // Purchasing power, rebased to 100 at the start of the selected period.
+  const real = groups.map(([k, label, color]) => {
+    const w = win('salarios', realIndex(k));
+    const base = w[0]?.[1];
+    return { label, color, data: base ? w.map(([d, v]) => [d, (v / base) * 100]) : [] };
+  }).filter((x) => x.data.length);
+  const start = real[0]?.data[0]?.[0];
+  const f1 = figure({ title: '¿Le ganan los sueldos a la inflación?', subtitle: `Poder de compra del salario, ${start ? periodLabel(start, 'M', 'long') : ''} = 100. Arriba de 100, el sueldo compra más que al principio del período.`, source: sourceLine('salarios.privado', 'ipc.ng.nac'), table: tableFor(real, 'M', fmt.index), wide: true });
+  lineChart(f1, real, { format: fmt.index, axisFormat: fmt.axis, height: 300 });
+
+  const vs = [{ label: 'Salarios', color: '--s1', data: win('salarios', yyW) }, { label: 'Inflación', color: '--s2', data: win('salarios', ipcY.filter(([d]) => d <= wd)) }];
+  const f2 = figure({ title: 'Salarios e inflación', subtitle: 'Variación interanual, en porcentaje', source: sourceLine('salarios.total', 'ipc.ng.nac'), table: tableFor(vs, 'M', fmt.pct) });
+  lineChart(f2, vs, { format: (x) => fmt.pct(x), axisFormat: (x) => `${fmt.axis(x)} %` });
+
+  const rows = groups.map(([k, label]) => { const r = last(realYoY(k)); return r && { label, value: r[1], note: periodLabel(r[0]) }; }).filter(Boolean);
+  const f3 = figure({ title: 'Cambio real en el último año', subtitle: 'Variación del salario descontada la inflación, respecto del mismo mes del año anterior', source: sourceLine('salarios.privado', 'ipc.ng.nac'), table: () => ({ columns: ['Grupo', 'Variación real'], rows: rows.map((r) => [r.label, fmt.signedPct(r.value)]) }) });
+  rankedBars(f3, rows, { format: fmt.signedPct, sort: false, clip: false });
+
+  return h('div', {}, head,
+    h('section', { class: `tiles${tiles.length === 4 ? ' four' : ''}` }, ...tiles),
+    h('div', { class: 'grid' }, f1.node, f2.node, f3.node,
+      h('section', { class: 'card glossary' }, h('h3', { text: 'Cómo leer estos datos' }),
+        h('p', { text: 'El índice de salarios del INDEC sigue cuánto cobra en promedio cada grupo de trabajadores, sin contar cambios de puesto ni de horas.' }),
+        h('p', { text: 'El salario real divide el índice de salarios por el IPC: muestra si con el sueldo se puede comprar más o menos que antes.' }),
+        h('p', { text: 'El dato de los trabajadores no registrados tiene un rezago de cinco meses: el INDEC lo publica con un retraso mayor que el resto.' }))));
+}
+
+function dolar() {
+  const M = SNAP.markets ?? {};
+  const head = sectionHead('dolar', 'Dólar y mercados', 'Cotizaciones del dólar, riesgo país y reservas del Banco Central. Estos datos no son del INDEC: vienen de cotizaciones de mercado y del BCRA.', [rangeControl('dolar')]);
+  if (!M['usd.oficial']) return h('div', {}, head, h('div', { class: 'grid' }, unavailable('Dólar y mercados', 'Las cotizaciones no estaban disponibles en esta actualización.')));
+  const usdTile = (k, label) => {
+    const q = M[k]; if (!q) return null;
+    const ch = q.valor30 ? (q.valor / q.valor30 - 1) * 100 : undefined;
+    return tile({ label, value: fmt.pesos(q.valor), period: fmtDate(q.fecha), note: q.compra ? `compra ${fmt.pesos(q.compra)}` : null,
+      deltaEl: ch !== undefined ? delta(ch, fmt.signedPct(ch), 'en 30 días', null) : null, spark: lastMonths(D(k), 24) });
+  };
+  const tiles = [usdTile('usd.oficial', 'Dólar oficial'), usdTile('usd.blue', 'Dólar blue'), usdTile('usd.bolsa', 'Dólar MEP'), usdTile('usd.contadoconliqui', 'Contado con liquidación')];
+  if (M['usd.blue'] && M['usd.oficial']) {
+    const gap = (M['usd.blue'].valor / M['usd.oficial'].valor - 1) * 100;
+    tiles.push(tile({ label: 'Brecha blue / oficial', value: fmt.signedPct(gap), period: fmtDate(M['usd.blue'].fecha), spark: lastMonths(D('usd.brecha'), 24) }));
+  }
+  tiles.push(usdTile('usd.mayorista', 'Dólar mayorista'));
+  if (M.riesgo) {
+    const prev = M.riesgo.valor30;
+    tiles.push(tile({ label: 'Riesgo país', value: `${fmt.int(M.riesgo.valor)} pb`, period: fmtDate(M.riesgo.fecha), note: 'puntos básicos',
+      deltaEl: prev ? delta(M.riesgo.valor - prev, `${M.riesgo.valor - prev > 0 ? '+' : M.riesgo.valor - prev < 0 ? '−' : ''}${fmt.int(Math.abs(M.riesgo.valor - prev))} pb`, 'en 30 días', false) : null, spark: lastMonths(D('riesgo'), 24) }));
+  }
+  if (M.reservas) {
+    const prev = M.reservas.valor30;
+    tiles.push(tile({ label: 'Reservas del BCRA', value: fmt.usdM(M.reservas.valor), period: fmtDate(M.reservas.fecha),
+      deltaEl: prev ? delta(M.reservas.valor - prev, fmt.signedUsdM(M.reservas.valor - prev), 'en 30 días', true) : null, spark: lastMonths(D('reservas'), 24) }));
+  }
+  const tl = tiles.filter(Boolean);
+
+  const q = [['usd.oficial', 'Oficial', '--s1'], ['usd.blue', 'Blue', '--s2'], ['usd.bolsa', 'MEP', '--s3']].filter(([k]) => has(k)).map(([k, label, color]) => ({ label, color, data: win('dolar', D(k)) }));
+  const f1 = figure({ title: 'Dólar oficial, blue y MEP', subtitle: 'Cotización de venta al cierre de cada mes, en pesos. El último punto es el dato más reciente.', source: sourceLine('usd.oficial'), table: tableFor(q, 'M', fmt.pesos), wide: true });
+  lineChart(f1, q, { format: fmt.pesos, axisFormat: fmt.axis, height: 300 });
+  const br = win('dolar', D('usd.brecha'));
+  const f2 = figure({ title: 'Brecha cambiaria', subtitle: 'Cuánto más caro está el dólar blue que el oficial, al cierre de cada mes', source: sourceLine('usd.blue'), table: tableFor([{ label: 'Brecha', data: br }], 'M', fmt.signedPct) });
+  columnChart(f2, br, { format: fmt.signedPct, axisFormat: (x) => `${fmt.axis(x)} %`, negColor: '--neg', label: 'Blue sobre oficial' });
+  const rp = [{ label: 'Riesgo país', color: '--s1', data: win('dolar', D('riesgo')) }];
+  const f3 = figure({ title: 'Riesgo país', subtitle: 'Puntos básicos al cierre de cada mes. Cuanto más alto, más cara le sale al país la deuda.', source: sourceLine('riesgo'), table: tableFor(rp, 'M', fmt.int) });
+  lineChart(f3, rp, { format: (x) => `${fmt.int(x)} pb`, axisFormat: fmt.axis, area: false });
+  const rs = [{ label: 'Reservas', color: '--s1', data: win('dolar', D('reservas')) }];
+  const f4 = figure({ title: 'Reservas del Banco Central', subtitle: 'Reservas internacionales brutas, millones de dólares, al cierre de cada mes', source: sourceLine('reservas'), table: tableFor(rs, 'M', fmt.usdM) });
+  lineChart(f4, rs, { format: fmt.usdM, axisFormat: fmt.axis, area: false });
+
+  return h('div', {}, head,
+    h('section', { class: `tiles${tl.length === 8 ? ' four' : ''}` }, ...tl),
+    h('div', { class: 'grid' }, f1.node, f2.node, f3.node, f4.node));
 }
 
 function comercio() {
@@ -508,7 +639,7 @@ function poblacion() {
 }
 
 function fuentes() {
-  const rows = Object.entries(SNAP.series).map(([k, s]) => [s.title, s.source === 'indec' ? 'API INDEC' : 'datos.gob.ar', periodLabel(last(s.data)[0], s.freq), s.sourceId]);
+  const rows = Object.entries(SNAP.series).map(([k, s]) => [s.title, ORIGIN_LABEL[s.source] ?? s.source, periodLabel(last(s.data)[0], s.freq), s.sourceId]);
   const signs = [['*', 'Dato provisorio'], ['**', 'Dato preliminar'], ['e', 'Estimado por extrapolación o proyección'], ['i', 'Estimado por imputación'], ['u', 'Calidad inferior al estándar'], ['-', 'Cero absoluto'], ['.', 'Dato no registrado'], ['...', 'No disponible a la fecha de publicación'], ['///', 'Dato que no corresponde presentar'], ['s', 'Confidencial por secreto estadístico']];
   const gen = new Date(SNAP.generated);
   return h('div', {},
@@ -519,6 +650,7 @@ function fuentes() {
         h('p', { text: 'Todos los datos son del Instituto Nacional de Estadística y Censos (INDEC). El sitio los descarga una vez por día y los guarda en un único archivo que leen todos los gráficos, así que los números de cada página coinciden entre sí.' }),
         h('p', { text: SNAP.indec ? 'Esta actualización usó la API oficial del INDEC (api.indec.gob.ar).' : 'Esta actualización usó la copia pública que el portal datos.gob.ar hace de las series del INDEC. Algunos indicadores solo están en la API oficial del INDEC y aparecen cuando el sitio se conecta a ella.' }),
         h('p', { text: `Última actualización: ${gen.toLocaleString('es-AR', { dateStyle: 'long', timeStyle: 'short' })}.` }),
+        h('p', { text: 'La sección Dólar y mercados no usa datos del INDEC: las cotizaciones y el riesgo país vienen de ArgentinaDatos (api.argentinadatos.com), que reúne cotizaciones de mercado, y las reservas, de la API del Banco Central. Los salarios y el ISAC son del INDEC, publicados en datos.gob.ar.' }),
         h('p', { text: 'Las variaciones se calculan a partir de los índices publicados. Por redondeo, pueden diferir en una décima de las que figuran en los informes técnicos del INDEC.' }),
         h('p', {}, 'IndeX es un proyecto independiente y no es un sitio oficial del INDEC. Documentación de la API: ', h('a', { href: 'https://api.indec.gob.ar/docs', target: '_blank', rel: 'noopener', text: 'api.indec.gob.ar/docs' }), '.')),
       h('section', { class: 'card prose' },
@@ -534,9 +666,9 @@ function fuentes() {
 
 // ------------------------------------------------------------------ router
 const SECTIONS = [
-  ['inicio', 'Resumen', inicio], ['precios', 'Precios', precios], ['canastas', 'Canastas', canastas],
+  ['inicio', 'Resumen', inicio], ['precios', 'Precios', precios], ['salarios', 'Salarios', salarios], ['canastas', 'Canastas', canastas],
   ['trabajo', 'Trabajo', trabajo], ['pobreza', 'Pobreza', pobreza], ['actividad', 'Actividad', actividad],
-  ['comercio', 'Comercio exterior', comercio], ['poblacion', 'Población', poblacion], ['fuentes', 'Fuentes', fuentes],
+  ['comercio', 'Comercio exterior', comercio], ['dolar', 'Dólar', dolar], ['poblacion', 'Población', poblacion], ['fuentes', 'Fuentes', fuentes],
 ];
 const current = () => { const id = location.hash.slice(1); return SECTIONS.find((s) => s[0] === id) ?? SECTIONS[0]; };
 
@@ -585,6 +717,7 @@ async function boot() {
     const res = await fetch('data/snapshot.json', { cache: 'no-cache' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     SNAP = await res.json();
+    derive();
   } catch (err) {
     document.getElementById('main').replaceChildren(h('section', { class: 'card unavailable' }, h('h3', { text: 'No se pudieron cargar los datos' }), h('p', { text: `Recargá la página en unos minutos. Detalle: ${err.message}` })));
     return;

@@ -334,6 +334,57 @@ async function datosSeries(defs) {
   return out;
 }
 
+// ----------------------------------------------------------------- markets
+// Not INDEC: dollar quotes and country risk from ArgentinaDatos (open API that
+// compiles market quotes) and international reserves from the BCRA API.
+const MARKET_HOSTS = { ad: 'https://api.argentinadatos.com/v1', bcra: 'https://api.bcra.gob.ar/estadisticas/v4.0' };
+const USD_CASAS = [
+  ['oficial', 'Dólar oficial'], ['blue', 'Dólar blue'], ['bolsa', 'Dólar MEP'],
+  ['contadoconliqui', 'Dólar contado con liquidación'], ['mayorista', 'Dólar mayorista'], ['tarjeta', 'Dólar tarjeta'],
+];
+
+/** Last value of each month, from daily [[YYYY-MM-DD, v]] rows. */
+function monthlyClose(rows, from = '2016-01') {
+  const m = new Map();
+  for (const [d, v] of [...rows].sort((a, b) => a[0].localeCompare(b[0]))) if (Number.isFinite(v) && d.slice(0, 7) >= from) m.set(d.slice(0, 7), v);
+  return [...m];
+}
+
+async function marketData() {
+  const series = {};
+  const latest = {};
+  const add = (key, title, unit, source, sourceId, daily) => {
+    if (!daily.length) return;
+    series[key] = { title, short: title, unit, freq: 'M', source, sourceId, data: monthlyClose(daily) };
+    const sorted = [...daily].filter(([, v]) => Number.isFinite(v)).sort((a, b) => a[0].localeCompare(b[0]));
+    const [fecha, valor] = sorted.at(-1);
+    // Value about 30 days earlier, for a "vs. hace 30 días" comparison.
+    const cutoff = new Date(Date.parse(`${fecha}T00:00:00Z`) - 30 * 864e5).toISOString().slice(0, 10);
+    const before = sorted.filter(([d]) => d <= cutoff).at(-1);
+    latest[key] = { fecha, valor, ...(before ? { fecha30: before[0], valor30: before[1] } : {}) };
+  };
+  try {
+    const all = await getJSON(`${MARKET_HOSTS.ad}/cotizaciones/dolares`);
+    for (const [casa, title] of USD_CASAS) {
+      const rows = all.filter((r) => r.casa === casa && Number.isFinite(r.venta));
+      add(`usd.${casa}`, title, 'Pesos por dólar (venta)', 'argentinadatos', `cotizaciones/dolares/${casa}`, rows.map((r) => [r.fecha, r.venta]));
+      const last = rows.at(-1);
+      if (last) latest[`usd.${casa}`].compra = last.compra;
+    }
+  } catch (err) { log(`  ! cotizaciones del dólar: ${err.message}`); }
+  try {
+    const rp = await getJSON(`${MARKET_HOSTS.ad}/finanzas/indices/riesgo-pais`);
+    add('riesgo', 'Riesgo país', 'Puntos básicos', 'argentinadatos', 'finanzas/indices/riesgo-pais', rp.map((r) => [r.fecha, r.valor]));
+  } catch (err) { log(`  ! riesgo país: ${err.message}`); }
+  try {
+    const res = await getJSON(`${MARKET_HOSTS.bcra}/monetarias/1?desde=2016-01-01&hasta=${new Date().toISOString().slice(0, 10)}&limit=3000`);
+    const rows = res.results?.[0]?.detalle ?? [];
+    add('reservas', 'Reservas internacionales del BCRA', 'Millones de US$', 'bcra', 'monetarias/1', rows.map((r) => [r.fecha, r.valor]));
+  } catch (err) { log(`  ! reservas: ${err.message}`); }
+  log(`  mercados: ${Object.keys(series).length} series`);
+  return { series, latest };
+}
+
 // ------------------------------------------------------------------- probe
 async function probe() {
   if (!TOKEN) throw new Error('--probe necesita INDEC_TOKEN');
@@ -399,15 +450,20 @@ async function main() {
     series[def.key] = {
       title: def.title, short: def.short, unit: def.unit, freq: def.freq,
       source: status[def.key],
-      sourceId: status[def.key] === 'indec' ? def.indec.endpoint : def.fallback.id,
+      sourceId: status[def.key] === 'indec' ? def.indec.endpoint : (def.fallback.id ?? 'derivada'),
       data: result[def.key],
     };
   }
+
+  log('Leyendo cotizaciones y BCRA ...');
+  const markets = await marketData();
+  Object.assign(series, markets.series);
 
   const snapshot = {
     generated: new Date().toISOString(),
     indec: indecOk,
     series,
+    markets: Object.keys(markets.latest).length ? markets.latest : null,
     trade: trade ? { countries: trade.countries } : null,
     population,
   };
@@ -415,7 +471,7 @@ async function main() {
   await writeFile(new URL('snapshot.json', OUT), JSON.stringify(snapshot));
 
   const absent = defs.filter((d) => !series[d.key]).map((d) => d.key);
-  log(`\n${Object.keys(series).length}/${defs.length} series · INDEC: ${Object.values(status).filter((s) => s === 'indec').length} · datos.gob.ar: ${Object.values(status).filter((s) => s === 'datos.gob.ar').length}`);
+  log(`\n${defs.filter((d) => series[d.key]).length}/${defs.length} series del catálogo + ${Object.keys(markets.series).length} de mercado · INDEC: ${Object.values(status).filter((s) => s === 'indec').length} · datos.gob.ar: ${Object.values(status).filter((s) => s === 'datos.gob.ar').length}`);
   if (absent.length) log(`Sin datos (requieren INDEC_TOKEN): ${absent.join(', ')}`);
   log(`Población: ${population ? 'sí' : 'no'} · Destinos comerciales: ${trade ? 'sí' : 'no'}`);
 }

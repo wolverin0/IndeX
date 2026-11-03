@@ -4,9 +4,10 @@ A public dashboard of Argentina's official statistics (INDEC), written for
 everyday readers rather than economists. Spanish UI.
 
 **Sections:** Resumen · Precios (IPC by category, division and region,
-wholesale prices) · Canastas básicas · Trabajo (EPH) · Pobreza · Actividad
-(EMAE by sector, industrial production) · Comercio exterior · Población ·
-Fuentes.
+wholesale and construction prices) · Salarios (wage index and real wages) ·
+Canastas básicas · Trabajo (EPH) · Pobreza · Actividad (EMAE by sector,
+industrial production, construction) · Comercio exterior · Dólar y mercados ·
+Población · Fuentes.
 
 **Tools for the public:**
 - *Actualizá un monto por inflación*: brings any peso amount from one month to another with the national CPI.
@@ -23,6 +24,14 @@ chart reads, so the numbers agree across the page. Each series in
 2. **apis.datos.gob.ar**, the national open-data portal's public copy of the
    same INDEC series. No token needed. It is used for any series the INDEC API
    can't provide in that run.
+
+Two more groups don't come from the INDEC API:
+
+- **INDEC series the API doesn't carry** (wage index, ISAC construction
+  activity): taken from datos.gob.ar.
+- **Market data, not INDEC** (dollar quotes, country risk, BCRA reserves):
+  from [ArgentinaDatos](https://api.argentinadatos.com) and the
+  [BCRA API](https://api.bcra.gob.ar). The site labels them as such.
 
 Some indicators exist **only** in the INDEC API: population projections
 (Censo 2022), indigence rates, informal employment, the child-rearing basket

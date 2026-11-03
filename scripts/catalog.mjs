@@ -122,7 +122,9 @@ const EPH_TRABAJO = [
   ['empleo', 'Tasa de empleo', 'tasa_de_empleo', '44.2_ECTET_0_T_30'],
   ['desocupacion', 'Tasa de desocupación', 'tasa_de_desocupacion', '45.2_ECTDT_0_T_33'],
   ['subocupacion', 'Tasa de subocupación', 'tasa_de_subocupacion', '46.2_ECTST_0_T_36'],
-  ['informalidad', 'Tasa de empleo informal', 'tasa_de_empleo_informal', null],
+  // Over the total population, like the other EPH rates. The site divides it
+  // by the employment rate to show informality as a share of workers.
+  ['informalidad', 'Tasa de empleo informal (sobre población total)', 'tasa_de_empleo_informal', null],
 ];
 for (const [code, title, column, id] of EPH_TRABAJO) {
   add(`eph.${code}`, {
@@ -183,6 +185,22 @@ add('ipimin.original', {
   title: 'IPI minero · serie original', short: 'Minería', unit: 'Índice 2016=100', freq: 'M',
   indec: { endpoint: 'ipi_minero', desc: /nivel general/, serie: /original/ },
 });
+
+add('isac', {
+  title: 'Actividad de la construcción (ISAC)', short: 'ISAC', unit: 'Índice 2004=100', freq: 'M',
+  fallback: { id: '33.2_ISAC_NIVELRAL_0_M_18_63' },
+});
+
+// ---- Salarios (INDEC, not in the INDEC API: published on datos.gob.ar) -------
+for (const [code, title, id] of [
+  ['total', 'Índice de salarios', '149.1_TL_INDIIOS_OCTU_0_21'],
+  ['registrado', 'Salarios · empleo registrado', '149.1_TL_REGIADO_OCTU_0_16'],
+  ['privado', 'Salarios · registrados del sector privado', '149.1_SOR_PRIADO_OCTU_0_25'],
+  ['publico', 'Salarios · sector público', '149.1_SOR_PUBICO_OCTU_0_14'],
+  ['noregistrado', 'Salarios · empleo no registrado', '149.1_SOR_PRIADO_OCTU_0_28'],
+]) {
+  add(`salarios.${code}`, { title, short: title.replace('Salarios · ', ''), unit: 'Índice oct-2016=100', freq: 'M', fallback: { id } });
+}
 
 // ---- Comercio exterior -----------------------------------------------------
 // Some datos.gob.ar copies of these series stopped updating, so a few are
