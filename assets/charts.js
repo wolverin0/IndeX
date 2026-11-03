@@ -8,7 +8,11 @@ import { monthIndex, fromIndex, periodLabel, fmt } from './data.js';
 const NS = 'http://www.w3.org/2000/svg';
 const svg = (tag, attrs = {}, parent) => {
   const n = document.createElementNS(NS, tag);
-  for (const [k, v] of Object.entries(attrs)) if (v !== undefined && v !== null) n.setAttribute(k, v);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === undefined || v === null) continue;
+    // CSSOM instead of a style attribute, so a strict Content-Security-Policy allows it
+    if (k === 'style') n.style.cssText = v; else n.setAttribute(k, v);
+  }
   if (parent) parent.appendChild(n);
   return n;
 };
